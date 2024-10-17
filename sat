@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+import sys
+import argparse
+
+def DPLL(clauses, symbols, model, args):
+    unresolvedClauses = []
+    #Early Termination
+    for clause in clauses:
+        isResolved = False
+        if len(clause) == 0: #if an empty clause exists, return False
+            print("empty clause found")
+            return False, {}
+        atoms = clause.split(",")
+        for atom in atoms:
+            sym = atom.lstrip('~')
+            isNegated = atom.startswith("~")
+            if sym in model:
+                if (isNegated and model[sym] == False) or (not isNegated and model[sym] == True):
+                    isResolved = True
+                    break
+        
+        if isResolved == False:
+            unresolvedClauses.append(clause)
+
+    if len(unresolvedClauses) == 0: #If all clauses are true already, return True
+        return True, model
+    
+    #Pure Symbols Heuristic
+    if not args.nopure:
+        pureSymbols = findPureSymbols(unresolvedClauses, model)
+        for sym, value in pureSymbols.items():
+            model[sym] = value
+        if pureSymbols:
+            return DPLL(clauses, symbols, model, args)
+
+
+    #Unit Clause Heuristic
+    if not args.nounit:
+        unitClause = findUnitClause(unresolvedClauses, model)
+        if unitClause:
+            sym, value = unitClause
+            model[sym] = value
+            return DPLL(clauses, symbols, model, args)
+
+
+    #Backtracking 
+    for sym in symbols:
+        if sym not in model: #skip symbol if the value is already assigned
+            model[sym] = True #try symbol being True
+            result, returnModel = DPLL(clauses, symbols, model, args)
+            if result:
+                return result, returnModel
+            
+            model[sym] = False #try symbol being False
+            result, returnModel = DPLL(clauses, symbols, model, args)
+            if result:
+                return result, returnModel
+
+            #Return False if both do not work
+            del model[sym]
+            return False,{}
+
+    return False, {}
+
+def findPureSymbols(unresolvedClauses, model):
+    pureSymbols = {}
+    contradictorySymbols = set() #keeps track of nonPure symbols
+
+    for clause in unresolvedClauses:
+        atoms = clause.split(',')
+        for atom in atoms:
+            sym = atom.lstrip("~")
+            if sym in model or sym in contradictorySymbols: #skip atom if it is already assigned or if it is contradictory
+                continue
+            #if the symbol is negated
+            if atom.startswith("~"): 
+                symbol = atom[1:]
+                if symbol in pureSymbols and pureSymbols[symbol] == True: 
+                    #The symbol is not pure, it exists in its normal form
+                    pureSymbols.pop(symbol)
+                    contradictorySymbols.add(symbol)
+                else:
+                    #the symbol is currently pure, but in its negated form
+                    pureSymbols[symbol] = False 
+            else:
+                if atom in pureSymbols and pureSymbols[atom] == False: 
+                    #The symbol is NOT PURE, it exists in its negated form
+                    pureSymbols.pop(atom)
+                    contradictorySymbols.add(atom)
+                else:
+                    #the symbol is currently pure, but in its normal form
+                    pureSymbols[atom] = True 
+    return pureSymbols
+
+def findUnitClause(unresolvedClauses, model):
+    for clause in unresolvedClauses:
+        atoms = clause.split(",")
+        unassignedAtoms = []
+        clauseResolved = False
+        
+        for atom in atoms:
+            sym = atom.lstrip('~')
+            isNegated = atom.startswith("~")
+            
+            if sym in model:
+                # If the current symbol resolves the clause, skip the clause
+                if (isNegated and model[sym] == False) or (not isNegated and model[sym] == True):
+                    clauseResolved = True
+                    break
+            else:
+                #Track unassigned atom
+                unassignedAtoms.append(atom)
+        
+        #If the clause is unresolved and has only one unassigned atom, it is a unit clause
+        if not clauseResolved and len(unassignedAtoms) == 1:
+            unitAtom = unassignedAtoms[0]
+            sym = unitAtom.lstrip('~')
+            isNegated = unitAtom.startswith("~")
+            
+            #Return the symbol and its truth value (False if negated, True otherwise)
+            return (sym, not isNegated)
+    return None
+
+def main():
+    fileParser = argparse.ArgumentParser(description="DPLL")
+    fileParser.add_argument("--nounit", action="store_true")
+    fileParser.add_argument("--nopure", action="store_true")
+    args = fileParser.parse_args()
+
+    clausesArr = sys.stdin.read().strip().splitlines()
+    symbols = set()
+    model = {}
+    for clause in clausesArr:
+        atoms = clause.split(",")
+        for atom in atoms:
+            sym = atom.lstrip('~')
+            symbols.add(sym)
+    
+    result, resultModel =  DPLL(clausesArr, symbols, model, args)
+
+    if result:
+        literalTruthValueAns = []
+        for literal, value in resultModel.items():
+            literalTruthValueAns.append((literal, value))
+        ansArr = sorted(literalTruthValueAns)
+        output = "satisfiable "
+        for literalTuple in ansArr:
+            output += literalTuple[0] + "=" + str(literalTuple[1])[0] + " "
+        print(output)
+    else:
+        print("unsatisfiable")
+
+if __name__ == "__main__":
+    main()
